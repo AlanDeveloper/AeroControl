@@ -1,4 +1,6 @@
-int start(int *num_pistas, int *num_portoes, int *num_torres, int *tempo_simulacao) {
+#include <stdio.h>
+#include "include/simulation.h"
 
-    return 0;
+void start(int *num_runways, int *num_gates, int *num_towers) {
+    //
 }
