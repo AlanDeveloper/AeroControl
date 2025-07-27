@@ -16,8 +16,11 @@ typedef struct {
     ControlTower *towers;
     int num_towers;
 
-    Aircraft *aircrafts;
-    int num_aircrafts;
+    Aircraft **domestic_aircrafts;
+    int num_domestic_aircraft;
+
+    Aircraft **international_aircrafts;
+    int num_international_aircraft;
 } Airport;
 
 #endif
