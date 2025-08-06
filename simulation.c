@@ -1,15 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #include "include/simulation.h"
 #include "include/airport.h"
-#include "include/aircraft.h"
 
 extern volatile bool simulation_running;
 
-void start(Airport *airport, pthread_t *aircraft_threads) {
-
+void allocate_resources(Airport *airport) {
     airport->runways = malloc(sizeof(Runway) * airport->num_runways);
     airport->gates = malloc(sizeof(Gate) * airport->num_gates);
     airport->towers = malloc(sizeof(ControlTower) * airport->num_towers);
@@ -17,10 +16,12 @@ void start(Airport *airport, pthread_t *aircraft_threads) {
     airport->international_aircrafts = malloc(sizeof(Aircraft*) * airport->num_international_aircraft);
 
     if (!airport->runways || !airport->gates || !airport->towers || !airport->domestic_aircrafts || !airport->international_aircrafts) {
-        printf("Erro: falha na alocação de memória.\n");
+        printf("Erro: falha na alocação de memória.\n\n");
         exit(1);
     }
+}
 
+void initialize_resources(Airport *airport) {
     for (int i = 0; i < airport->num_runways; i++) {
         airport->runways[i].in_use = false;
         airport->runways[i].by_aircraft[0] = '\0';
@@ -34,23 +35,6 @@ void start(Airport *airport, pthread_t *aircraft_threads) {
     for (int i = 0; i < airport->num_towers; i++) {
         airport->towers[i].free_operates = airport->operations_by_tower;
     }
-
-    for (int i = 0; i < airport->num_domestic_aircraft; i++) {
-        airport->domestic_aircrafts[i] = create_aircraft(DOMESTIC);
-        pthread_create(&aircraft_threads[i], NULL, aircraft_thread_function, (void*) airport->domestic_aircrafts[i]);
-    }
-
-    for (int i = 0; i < airport->num_international_aircraft; i++) {
-        airport->international_aircrafts[i] = create_aircraft(INTERNATIONAL);
-        pthread_create(&aircraft_threads[i], NULL, aircraft_thread_function, (void*) airport->international_aircrafts[i]);
-    }
-
-    printf("Aeroporto inicializado com sucesso:\n");
-    printf("Pistas: %d\n", airport->num_runways);
-    printf("Portões: %d\n", airport->num_gates);
-    printf("Torres de Controle: %d com %d operações por torre\n", airport->num_towers, airport->operations_by_tower);
-    printf("Aviões domésticos: %d\n", airport->num_domestic_aircraft);
-    printf("Aviões internacionais: %d\n", airport->num_international_aircraft);
 }
 
 Aircraft* create_aircraft(FlightType type) {
@@ -80,4 +64,34 @@ void* aircraft_thread_function(void* arg) {
         usleep(100000);
     }
     return NULL;
+}
+
+void create_and_start_aircraft_threads(Airport *airport, pthread_t *aircraft_threads) {
+    int thread_index = 0;
+
+    for (int i = 0; i < airport->num_domestic_aircraft; i++) {
+        airport->domestic_aircrafts[i] = create_aircraft(DOMESTIC);
+        pthread_create(&aircraft_threads[thread_index++], NULL, aircraft_thread_function, (void*) airport->domestic_aircrafts[i]);
+    }
+
+    for (int i = 0; i < airport->num_international_aircraft; i++) {
+        airport->international_aircrafts[i] = create_aircraft(INTERNATIONAL);
+        pthread_create(&aircraft_threads[thread_index++], NULL, aircraft_thread_function, (void*) airport->international_aircrafts[i]);
+    }
+}
+
+void print_airport_summary(Airport *airport) {
+    printf("Aeroporto inicializado com sucesso.\n\n");
+    printf("Pistas: %d\n", airport->num_runways);
+    printf("Portões: %d\n", airport->num_gates);
+    printf("Torres de Controle: %d com %d operações por torre\n", airport->num_towers, airport->operations_by_tower);
+    printf("Aviões domésticos: %d\n", airport->num_domestic_aircraft);
+    printf("Aviões internacionais: %d\n", airport->num_international_aircraft);
+}
+
+void start(Airport *airport, pthread_t *aircraft_threads) {
+    allocate_resources(airport);
+    initialize_resources(airport);
+    create_and_start_aircraft_threads(airport, aircraft_threads);
+    print_airport_summary(airport);
 }
