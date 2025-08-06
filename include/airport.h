@@ -21,6 +21,8 @@ typedef struct {
 
     Aircraft **international_aircrafts;
     int num_international_aircraft;
+
+    int operations_by_tower;
 } Airport;
 
 #endif

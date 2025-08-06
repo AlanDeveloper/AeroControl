@@ -1,9 +1,11 @@
 #ifndef SIMULATION_H
 #define SIMULATION_H
 
+#include <pthread.h>
 #include "aircraft.h"
+#include "airport.h"
 
-void start(int *num_runways, int *num_gates, int *num_towers, int *operations_by_tower, int *num_domestic_aircraft, int *num_international_aircraft, pthread_t *aircraft_threads);
+void start(Airport *aircraft, pthread_t *aircraft_threads);
 
 Aircraft* create_aircraft(FlightType type);
 
