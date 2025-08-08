@@ -8,6 +8,7 @@
 
 extern volatile bool simulation_running;
 extern volatile int simulation_time;
+extern volatile int simulation_time_max;
 
 void allocate_resources(Airport *airport) {
     airport->runways = malloc(sizeof(Runway) * airport->num_runways);
@@ -81,21 +82,21 @@ void decide_next_phase(Aircraft* aircraft) {
         default:             aircraft->phase = PHASE_NONE; break;
     }
 
-    int seconds = (rand() % simulation_time) + 1;
+    int seconds = (rand() % simulation_time_max) + 1;
 
-    printf("Avião %s entrou na fase '%s'. Duração estimada: %d segundos.\n",
-           aircraft->id,
-           get_phase_label_pt(aircraft->phase),
-           seconds);
+    printf("[EVENTO] Avião %-5s ► Entrou na fase %-12s │ Duração: %2d s\n",
+       aircraft->id,
+       get_phase_label_pt(aircraft->phase),
+       seconds);
 
     for (int i = 0; i < seconds && simulation_running; i++) {
         sleep(1);
     }
 
     if (simulation_running) {
-        printf("Avião %s terminou a fase '%s'.\n",
-            aircraft->id,
-            get_phase_label_pt(aircraft->phase));
+        printf("[EVENTO] Avião %-5s ◄ Terminou a fase %-12s\n",
+           aircraft->id,
+           get_phase_label_pt(aircraft->phase));
     }
 }
 
@@ -104,7 +105,6 @@ void* aircraft_thread_function(void* arg) {
 
     while (simulation_running) {
         decide_next_phase(aircraft);
-        usleep(100000);
     }
     return NULL;
 }

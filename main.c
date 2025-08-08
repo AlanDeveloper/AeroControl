@@ -7,7 +7,8 @@
 #include "include/airport.h"
 
 volatile bool simulation_running = true;
-volatile int simulation_time = 0;
+volatile int simulation_time_max = 0;
+volatile int simulation_time = 1;
 
 int get_positive_input(const char *prompt) {
     int value;
@@ -30,7 +31,7 @@ void setup_airport(Airport *airport) {
     airport->operations_by_tower = get_positive_input("Quantas operações por torre? ");
     airport->num_domestic_aircraft = get_positive_input("Quantos aviões domésticos? ");
     airport->num_international_aircraft = get_positive_input("Quantos aviões internacionais? ");
-    simulation_time = get_positive_input("Qual será o tempo de simulação (em segundos)? ");
+    simulation_time_max = get_positive_input("Qual será o tempo de simulação (em segundos)? ");
 }
 
 void print_simulation_summary(const Airport *airport) {
@@ -38,7 +39,7 @@ void print_simulation_summary(const Airport *airport) {
     printf("Pistas: %d\n", airport->num_runways);
     printf("Portões: %d\n", airport->num_gates);
     printf("Torres de Controle: %d\n", airport->num_towers);
-    printf("Tempo de simulação: %02d segundo(s)\n", simulation_time);
+    printf("Tempo de simulação: %02d segundo(s)\n", simulation_time_max);
 }
 
 int main() {
@@ -58,8 +59,8 @@ int main() {
     
     printf("\n=== Simulação iniciada ===\n\n");
     create_and_start_aircraft_threads(&airport, aircraft_threads);
-    for (int t = 1; t <= simulation_time; t++) {
-        printf("Tempo: %02d segundo(s)\n", t);
+    for (int simulation_time = 1; simulation_time < simulation_time_max; simulation_time++) {
+        printf("[TEMPO] %02d segundo(s) decorridos.\n", simulation_time);
         sleep(1);
     }
     simulation_running = false;
