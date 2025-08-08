@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#include "include/resource_manager.h"
 #include "include/simulation.h"
 #include "include/airport.h"
 
@@ -71,6 +72,7 @@ int main() {
         pthread_join(aircraft_threads[i], NULL);
         printf("✓ Thread %d finalizada\n", i);
     }
+    resource_manager_destroy();
     
     print_simulation_summary(&airport);
     

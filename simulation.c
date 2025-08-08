@@ -4,6 +4,7 @@
 #include <pthread.h>
 
 #include "include/simulation.h"
+#include "include/resource_manager.h"
 #include "include/airport.h"
 
 extern volatile bool simulation_running;
@@ -21,6 +22,8 @@ void allocate_resources(Airport *airport) {
         printf("Erro: falha na alocação de memória.\n\n");
         exit(1);
     }
+
+    resource_manager_init(airport->num_runways, airport->num_towers, airport->num_gates);
 }
 
 void initialize_resources(Airport *airport) {
@@ -112,7 +115,10 @@ void* aircraft_thread_function(void* arg) {
     int seconds;
     while (simulation_running) {
         seconds = decide_next_phase(aircraft);
+
+        lock_resources(aircraft);
         perform_phase(aircraft, seconds);
+        unlock_resources(aircraft);
     }
     return NULL;
 }
