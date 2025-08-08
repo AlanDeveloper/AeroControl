@@ -10,6 +10,7 @@ typedef enum {
     PHASE_NONE,
     BOARDING,
     TAKEOFF,
+    FLY,
     LANDING,
     DEBOARDING
 } FlightPhase;

@@ -66,17 +66,19 @@ const char* get_phase_label_pt(FlightPhase phase) {
         case PHASE_NONE:     return "nenhuma fase";
         case BOARDING:       return "embarque";
         case TAKEOFF:        return "decolagem";
+        case FLY:            return "voo";
         case LANDING:        return "pouso";
         case DEBOARDING:     return "desembarque";
         default:             return "fase desconhecida";
     }
 }
 
-void decide_next_phase(Aircraft* aircraft) {
+int decide_next_phase(Aircraft* aircraft) {
     switch (aircraft->phase) {
         case PHASE_NONE:     aircraft->phase = BOARDING; break;
         case BOARDING:       aircraft->phase = TAKEOFF; break;
-        case TAKEOFF:        aircraft->phase = LANDING; break;
+        case TAKEOFF:        aircraft->phase = FLY; break;
+        case FLY:            aircraft->phase = LANDING; break;
         case LANDING:        aircraft->phase = DEBOARDING; break;
         case DEBOARDING:     aircraft->phase = PHASE_NONE; break;
         default:             aircraft->phase = PHASE_NONE; break;
@@ -89,6 +91,10 @@ void decide_next_phase(Aircraft* aircraft) {
        get_phase_label_pt(aircraft->phase),
        seconds);
 
+    return seconds;
+}
+
+void perform_phase(Aircraft *aircraft, int seconds) {
     for (int i = 0; i < seconds && simulation_running; i++) {
         sleep(1);
     }
@@ -103,8 +109,10 @@ void decide_next_phase(Aircraft* aircraft) {
 void* aircraft_thread_function(void* arg) {
     Aircraft* aircraft = (Aircraft*) arg;
 
+    int seconds;
     while (simulation_running) {
-        decide_next_phase(aircraft);
+        seconds = decide_next_phase(aircraft);
+        perform_phase(aircraft, seconds);
     }
     return NULL;
 }
