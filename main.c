@@ -57,11 +57,9 @@ int main() {
     start(&airport, aircraft_threads);
     
     printf("\n=== Simulação iniciada ===\n\n");
+    create_and_start_aircraft_threads(&airport, aircraft_threads);
     for (int t = 1; t <= simulation_time; t++) {
         printf("Tempo: %02d segundo(s)\n", t);
-        if (t == 5) {
-            break;
-        }
         sleep(1);
     }
     simulation_running = false;

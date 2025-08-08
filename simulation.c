@@ -7,6 +7,7 @@
 #include "include/airport.h"
 
 extern volatile bool simulation_running;
+extern volatile int simulation_time;
 
 void allocate_resources(Airport *airport) {
     airport->runways = malloc(sizeof(Runway) * airport->num_runways);
@@ -59,8 +60,50 @@ Aircraft* create_aircraft(FlightType type) {
     return new_aircraft;
 }
 
+const char* get_phase_label_pt(FlightPhase phase) {
+    switch (phase) {
+        case PHASE_NONE:     return "nenhuma fase";
+        case BOARDING:       return "embarque";
+        case TAKEOFF:        return "decolagem";
+        case LANDING:        return "pouso";
+        case DEBOARDING:     return "desembarque";
+        default:             return "fase desconhecida";
+    }
+}
+
+void decide_next_phase(Aircraft* aircraft) {
+    switch (aircraft->phase) {
+        case PHASE_NONE:     aircraft->phase = BOARDING; break;
+        case BOARDING:       aircraft->phase = TAKEOFF; break;
+        case TAKEOFF:        aircraft->phase = LANDING; break;
+        case LANDING:        aircraft->phase = DEBOARDING; break;
+        case DEBOARDING:     aircraft->phase = PHASE_NONE; break;
+        default:             aircraft->phase = PHASE_NONE; break;
+    }
+
+    int seconds = (rand() % simulation_time) + 1;
+
+    printf("Avião %s entrou na fase '%s'. Duração estimada: %d segundos.\n",
+           aircraft->id,
+           get_phase_label_pt(aircraft->phase),
+           seconds);
+
+    for (int i = 0; i < seconds && simulation_running; i++) {
+        sleep(1);
+    }
+
+    if (simulation_running) {
+        printf("Avião %s terminou a fase '%s'.\n",
+            aircraft->id,
+            get_phase_label_pt(aircraft->phase));
+    }
+}
+
 void* aircraft_thread_function(void* arg) {
+    Aircraft* aircraft = (Aircraft*) arg;
+
     while (simulation_running) {
+        decide_next_phase(aircraft);
         usleep(100000);
     }
     return NULL;
@@ -92,6 +135,5 @@ void print_airport_summary(Airport *airport) {
 void start(Airport *airport, pthread_t *aircraft_threads) {
     allocate_resources(airport);
     initialize_resources(airport);
-    create_and_start_aircraft_threads(airport, aircraft_threads);
     print_airport_summary(airport);
 }

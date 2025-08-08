@@ -15,5 +15,8 @@ void print_airport_summary(Airport *airport);
 Aircraft* create_aircraft(FlightType type);
 
 void* aircraft_thread_function(void* arg);
+void decide_next_phase(Aircraft* aircraft);
+
+const char* get_phase_label_pt(FlightPhase phase);
 
 #endif

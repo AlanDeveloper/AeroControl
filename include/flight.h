@@ -8,9 +8,10 @@ typedef enum {
 
 typedef enum {
     PHASE_NONE,
+    BOARDING,
+    TAKEOFF,
     LANDING,
-    DEBOARDING,
-    TAKEOFF
+    DEBOARDING
 } FlightPhase;
 
 #endif
