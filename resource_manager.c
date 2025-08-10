@@ -1,284 +1,200 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <semaphore.h>
-#include <string.h>
+#include <pthread.h>
+#include <time.h>
 
-#include "include/resource_manager.h"
+#include "include/aircraft.h"
+#include "include/flight.h"
 
-static int runways_total, towers_total, gates_total;
+extern volatile int crashed_planes;
+extern volatile int successful_flights;
+extern volatile int simulation_running;
 
-static pthread_mutex_t *runways_mutex;
-static pthread_mutex_t *towers_mutex; 
-static pthread_mutex_t *gates_mutex;
+static int total_runways = 0;
+static int total_gates = 0;
+static int total_towers = 0;
+static int ops_per_tower = 0;
 
-static sem_t runways_sem;
-static sem_t towers_sem;
-static sem_t gates_sem;
+static int available_runways = 0;
+static int available_gates = 0;
+static int available_tower_ops = 0;
 
-static int lock_resource(pthread_mutex_t *mutexes, sem_t *sem, int total, const char *name) {
-    sem_wait(sem);
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
-    for (int i = 0; i < total; i++) {
-        if (pthread_mutex_trylock(&mutexes[i]) == 0) {
-            return i;
+static int waiting_international = 0;
+static int waiting_domestic = 0;
+static int domestic_priority = 0;
+
+static int seconds_since(struct timespec start) {
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    return (int)(now.tv_sec - start.tv_sec);
+}
+
+void init_resources(int runways, int gates, int towers, int max_ops_per_tower) {
+    pthread_mutex_lock(&mutex);
+
+    total_runways = runways;
+    total_gates = gates;
+    total_towers = towers;
+    ops_per_tower = max_ops_per_tower;
+
+    available_runways = runways;
+    available_gates = gates;
+    available_tower_ops = towers * max_ops_per_tower;
+
+    waiting_international = 0;
+    waiting_domestic = 0;
+    domestic_priority = 0;
+
+    pthread_mutex_unlock(&mutex);
+}
+
+void destroy_resources() {
+    pthread_mutex_destroy(&mutex);
+    pthread_cond_destroy(&cond);
+}
+
+static int can_acquire_resources(Aircraft* aircraft) {
+    int resources_available = 0;
+    
+    if (aircraft->phase == LANDING) {
+        resources_available = (available_runways > 0 && available_gates > 0 && available_tower_ops > 0);
+    }
+    else if (aircraft->phase == TAKEOFF) {
+        resources_available = (available_runways > 0 && available_tower_ops > 0);
+    }
+    else if (aircraft->phase == BOARDING || aircraft->phase == DEBOARDING) {
+        resources_available = (available_gates > 0);
+    }
+    else {
+        resources_available = 1;
+    }
+    
+    if (!resources_available) {
+        return 0;
+    }
+    
+    if (waiting_international > 0) {
+        if (aircraft->type == INTERNATIONAL) {
+            return 1;
+        } else {
+            return domestic_priority;
         }
     }
-    return -1;
+    
+    return 1;
 }
 
-static void unlock_resource(pthread_mutex_t *mutexes, sem_t *sem, int index) {
-    pthread_mutex_unlock(&mutexes[index]);
-    sem_post(sem);
+void increment_crashed_planes() {
+    crashed_planes++;
 }
 
-typedef struct {
-    int runway_idx;
-    int tower_idx;
-    int gate_idx;
-} ResourceAllocation;
-
-static __thread ResourceAllocation current_allocation = { -1, -1, -1 };
-static __thread char current_aircraft_id[10] = {0};
-
-void resource_manager_init(int num_runways, int num_towers, int num_gates) {
-    runways_total = num_runways;
-    towers_total = num_towers;
-    gates_total = num_gates;
-
-    runways_mutex = malloc(runways_total * sizeof(pthread_mutex_t));
-    towers_mutex = malloc(towers_total * sizeof(pthread_mutex_t));
-    gates_mutex = malloc(gates_total * sizeof(pthread_mutex_t));
-
-    sem_init(&runways_sem, 0, runways_total);
-    sem_init(&towers_sem, 0, towers_total);
-    sem_init(&gates_sem, 0, gates_total);
-
-    for (int i = 0; i < runways_total; i++)
-        pthread_mutex_init(&runways_mutex[i], NULL);
-    for (int i = 0; i < towers_total; i++)
-        pthread_mutex_init(&towers_mutex[i], NULL);
-    for (int i = 0; i < gates_total; i++)
-        pthread_mutex_init(&gates_mutex[i], NULL);
-}
-
-void resource_manager_destroy() {
-    for (int i = 0; i < runways_total; i++)
-        pthread_mutex_destroy(&runways_mutex[i]);
-    for (int i = 0; i < towers_total; i++)
-        pthread_mutex_destroy(&towers_mutex[i]);
-    for (int i = 0; i < gates_total; i++)
-        pthread_mutex_destroy(&gates_mutex[i]);
-
-    free(runways_mutex);
-    free(towers_mutex);
-    free(gates_mutex);
-
-    sem_destroy(&runways_sem);
-    sem_destroy(&towers_sem);
-    sem_destroy(&gates_sem);
-}
-
-static void lock_boarding_domestic() {
-    current_allocation.gate_idx = lock_resource(gates_mutex, &gates_sem, gates_total, "Gate");
-    current_allocation.tower_idx = lock_resource(towers_mutex, &towers_sem, towers_total, "Tower");
-
-    printf("[RECURSO] Avião %-5s ► Alocou portão %d, torre %d para embarque DOMÉSTICO\n",
-           current_aircraft_id, current_allocation.gate_idx, current_allocation.tower_idx);
-}
-
-static void unlock_boarding_domestic() {
-    printf("[RECURSO] Avião %-5s ◄ Liberou torre %d, portão %d do embarque DOMÉSTICO\n",
-           current_aircraft_id, current_allocation.tower_idx, current_allocation.gate_idx);
-
-    unlock_resource(towers_mutex, &towers_sem, current_allocation.tower_idx);
-    unlock_resource(gates_mutex, &gates_sem, current_allocation.gate_idx);
-    current_allocation.gate_idx = current_allocation.tower_idx = -1;
-}
-
-static void lock_boarding_international() {
-    current_allocation.tower_idx = lock_resource(towers_mutex, &towers_sem, towers_total, "Tower");
-    current_allocation.gate_idx = lock_resource(gates_mutex, &gates_sem, gates_total, "Gate");
-
-    printf("[RECURSO] Avião %-5s ► Alocou torre %d, portão %d para embarque INTERNACIONAL\n",
-           current_aircraft_id, current_allocation.tower_idx, current_allocation.gate_idx);
-}
-
-static void unlock_boarding_international() {
-    printf("[RECURSO] Avião %-5s ◄ Liberou portão %d, torre %d do embarque INTERNACIONAL\n",
-           current_aircraft_id, current_allocation.gate_idx, current_allocation.tower_idx);
-
-    unlock_resource(gates_mutex, &gates_sem, current_allocation.gate_idx);
-    unlock_resource(towers_mutex, &towers_sem, current_allocation.tower_idx);
-    current_allocation.gate_idx = current_allocation.tower_idx = -1;
-}
-
-static void lock_landing_domestic() {
-    current_allocation.tower_idx = lock_resource(towers_mutex, &towers_sem, towers_total, "Tower");
-    current_allocation.runway_idx = lock_resource(runways_mutex, &runways_sem, runways_total, "Runway");
-
-    printf("[RECURSO] Avião %-5s ► Alocou torre %d, pista %d para pouso DOMÉSTICO\n",
-           current_aircraft_id, current_allocation.tower_idx, current_allocation.runway_idx);
-}
-
-static void unlock_landing_domestic() {
-    printf("[RECURSO] Avião %-5s ◄ Liberou torre %d, pista %d do pouso DOMÉSTICO\n",
-           current_aircraft_id, current_allocation.tower_idx, current_allocation.runway_idx);
-
-    unlock_resource(runways_mutex, &runways_sem, current_allocation.runway_idx);
-    unlock_resource(towers_mutex, &towers_sem, current_allocation.tower_idx);
-    current_allocation.runway_idx = current_allocation.tower_idx = -1;
-}
-
-static void lock_landing_international() {
-    current_allocation.runway_idx = lock_resource(runways_mutex, &runways_sem, runways_total, "Runway");
-    current_allocation.tower_idx = lock_resource(towers_mutex, &towers_sem, towers_total, "Tower");
-
-    printf("[RECURSO] Avião %-5s ► Alocou pista %d, torre %d para pouso INTERNACIONAL\n",
-           current_aircraft_id, current_allocation.runway_idx, current_allocation.tower_idx);
-}
-
-static void unlock_landing_international() {
-    printf("[RECURSO] Avião %-5s ◄ Liberou torre %d, pista %d do pouso INTERNACIONAL\n",
-           current_aircraft_id, current_allocation.tower_idx, current_allocation.runway_idx);
-
-    unlock_resource(towers_mutex, &towers_sem, current_allocation.tower_idx);
-    unlock_resource(runways_mutex, &runways_sem, current_allocation.runway_idx);
-    current_allocation.runway_idx = current_allocation.tower_idx = -1;
-}
-
-static void lock_deboarding_domestic() {
-    current_allocation.gate_idx = lock_resource(gates_mutex, &gates_sem, gates_total, "Gate");
-    current_allocation.tower_idx = lock_resource(towers_mutex, &towers_sem, towers_total, "Tower");
-
-    printf("[RECURSO] Avião %-5s ► Alocou portão %d, torre %d para desembarque DOMÉSTICO\n",
-           current_aircraft_id, current_allocation.gate_idx, current_allocation.tower_idx);
-}
-
-static void unlock_deboarding_domestic() {
-    printf("[RECURSO] Avião %-5s ◄ Liberou torre %d, portão %d do desembarque DOMÉSTICO\n",
-           current_aircraft_id, current_allocation.tower_idx, current_allocation.gate_idx);
-
-    unlock_resource(towers_mutex, &towers_sem, current_allocation.tower_idx);
-    unlock_resource(gates_mutex, &gates_sem, current_allocation.gate_idx);
-    current_allocation.gate_idx = current_allocation.tower_idx = -1;
-}
-
-static void lock_deboarding_international() {
-    current_allocation.tower_idx = lock_resource(towers_mutex, &towers_sem, towers_total, "Tower");
-    current_allocation.gate_idx = lock_resource(gates_mutex, &gates_sem, gates_total, "Gate");
-
-    printf("[RECURSO] Avião %-5s ► Alocou torre %d, portão %d para desembarque INTERNACIONAL\n",
-           current_aircraft_id, current_allocation.tower_idx, current_allocation.gate_idx);
-}
-
-static void unlock_deboarding_international() {
-    printf("[RECURSO] Avião %-5s ◄ Liberou portão %d, torre %d do desembarque INTERNACIONAL\n",
-           current_aircraft_id, current_allocation.gate_idx, current_allocation.tower_idx);
-
-    unlock_resource(gates_mutex, &gates_sem, current_allocation.gate_idx);
-    unlock_resource(towers_mutex, &towers_sem, current_allocation.tower_idx);
-    current_allocation.gate_idx = current_allocation.tower_idx = -1;
-}
-
-static void lock_takeoff_domestic() {
-    current_allocation.tower_idx = lock_resource(towers_mutex, &towers_sem, towers_total, "Tower");
-    current_allocation.gate_idx = lock_resource(gates_mutex, &gates_sem, gates_total, "Gate");
-    current_allocation.runway_idx = lock_resource(runways_mutex, &runways_sem, runways_total, "Runway");
-
-    printf("[RECURSO] Avião %-5s ► Alocou torre %d, portão %d, pista %d para decolagem DOMÉSTICA\n",
-           current_aircraft_id, current_allocation.tower_idx, current_allocation.gate_idx, current_allocation.runway_idx);
-}
-
-static void unlock_takeoff_domestic() {
-    printf("[RECURSO] Avião %-5s ◄ Liberou pista %d, portão %d, torre %d da decolagem DOMÉSTICA\n",
-           current_aircraft_id, current_allocation.runway_idx, current_allocation.gate_idx, current_allocation.tower_idx);
-
-    unlock_resource(runways_mutex, &runways_sem, current_allocation.runway_idx);
-    unlock_resource(gates_mutex, &gates_sem, current_allocation.gate_idx);
-    unlock_resource(towers_mutex, &towers_sem, current_allocation.tower_idx);
-    current_allocation.runway_idx = current_allocation.gate_idx = current_allocation.tower_idx = -1;
-}
-
-static void lock_takeoff_international() {
-    current_allocation.gate_idx = lock_resource(gates_mutex, &gates_sem, gates_total, "Gate");
-    current_allocation.runway_idx = lock_resource(runways_mutex, &runways_sem, runways_total, "Runway");
-    current_allocation.tower_idx = lock_resource(towers_mutex, &towers_sem, towers_total, "Tower");
-
-    printf("[RECURSO] Avião %-5s ► Alocou portão %d, pista %d, torre %d para decolagem INTERNACIONAL\n",
-           current_aircraft_id, current_allocation.gate_idx, current_allocation.runway_idx, current_allocation.tower_idx);
-}
-
-static void unlock_takeoff_international() {
-    printf("[RECURSO] Avião %-5s ◄ Liberou torre %d, pista %d, portão %d da decolagem INTERNACIONAL\n",
-           current_aircraft_id, current_allocation.tower_idx, current_allocation.runway_idx, current_allocation.gate_idx);
-
-    unlock_resource(towers_mutex, &towers_sem, current_allocation.tower_idx);
-    unlock_resource(runways_mutex, &runways_sem, current_allocation.runway_idx);
-    unlock_resource(gates_mutex, &gates_sem, current_allocation.gate_idx);
-    current_allocation.runway_idx = current_allocation.gate_idx = current_allocation.tower_idx = -1;
+void wake_all_threads() {
+    pthread_mutex_lock(&mutex);
+    pthread_cond_broadcast(&cond);
+    pthread_mutex_unlock(&mutex);
 }
 
 void lock_resources(Aircraft* aircraft) {
-    strncpy(current_aircraft_id, aircraft->id, sizeof(current_aircraft_id) - 1);
-    current_aircraft_id[sizeof(current_aircraft_id) - 1] = '\0';
-    
-    switch (aircraft->phase) {
-        case BOARDING:
-            if (aircraft->type == INTERNATIONAL)
-                lock_boarding_international();
-            else
-                lock_boarding_domestic();
-            break;
-        case LANDING:
-            if (aircraft->type == INTERNATIONAL)
-                lock_landing_international();
-            else
-                lock_landing_domestic();
-            break;
-        case DEBOARDING:
-            if (aircraft->type == INTERNATIONAL)
-                lock_deboarding_international();
-            else
-                lock_deboarding_domestic();
-            break;
-        case TAKEOFF:
-            if (aircraft->type == INTERNATIONAL)
-                lock_takeoff_international();
-            else
-                lock_takeoff_domestic();
-            break;
-        default:
-            break;
+    pthread_mutex_lock(&mutex);
+    printf("[LOCK] %s tentando recursos para fase %s\n", aircraft->id, get_phase_label_pt(aircraft->phase));
+
+    struct timespec wait_start;
+    clock_gettime(CLOCK_REALTIME, &wait_start);
+
+    if (aircraft->type == INTERNATIONAL)
+        waiting_international++;
+    else
+        waiting_domestic++;
+
+    while (!can_acquire_resources(aircraft)) {
+        if (aircraft->type != INTERNATIONAL && aircraft->phase == LANDING) {
+            int waited = seconds_since(wait_start);
+            
+            if (waited >= 90) {
+                printf("AVISO: Avião doméstico %s caiu após esperar %d segundos!\n", aircraft->id, waited);
+                
+                waiting_domestic--;
+                
+                if (waiting_domestic == 0) {
+                    domestic_priority = 0;
+                }
+                
+                crashed_planes++;
+                pthread_cond_broadcast(&cond);
+                pthread_mutex_unlock(&mutex);
+                pthread_exit(NULL);
+            }
+            else if (waited >= 60 && domestic_priority == 0) {
+                domestic_priority = 1;
+                printf("ALERTA: Avião doméstico %s esperando para pousar há %d segundos! Ganhou prioridade!\n", aircraft->id, waited);
+                pthread_cond_broadcast(&cond);
+            }
+        }
+
+        printf("[WAIT] %s esperando. Recursos disponíveis: pistas=%d, portões=%d, torres=%d. Esperando: domésticos=%d, internacionais=%d, prioridade doméstica=%d\n",
+            aircraft->id, available_runways, available_gates, available_tower_ops,
+            waiting_domestic, waiting_international, domestic_priority);
+        
+        pthread_cond_wait(&cond, &mutex);
     }
+
+    if (aircraft->phase == LANDING) {
+        available_runways--;
+        available_gates--;
+        available_tower_ops--;
+    }
+    else if (aircraft->phase == TAKEOFF) {
+        available_runways--;
+        available_tower_ops--;
+    }
+    else if (aircraft->phase == BOARDING || aircraft->phase == DEBOARDING) {
+        available_gates--;
+    }
+
+    if (aircraft->type == INTERNATIONAL)
+        waiting_international--;
+    else
+        waiting_domestic--;
+
+    if (waiting_domestic == 0) {
+        domestic_priority = 0;
+    }
+    
+    printf("[LOCK] %s conseguiu recursos\n", aircraft->id);
+    pthread_mutex_unlock(&mutex);
 }
 
 void unlock_resources(Aircraft* aircraft) {
-    switch (aircraft->phase) {
-        case BOARDING:
-            if (aircraft->type == INTERNATIONAL)
-                unlock_boarding_international();
-            else
-                unlock_boarding_domestic();
-            break;
-        case LANDING:
-            if (aircraft->type == INTERNATIONAL)
-                unlock_landing_international();
-            else
-                unlock_landing_domestic();
-            break;
-        case DEBOARDING:
-            if (aircraft->type == INTERNATIONAL)
-                unlock_deboarding_international();
-            else
-                unlock_deboarding_domestic();
-            break;
-        case TAKEOFF:
-            if (aircraft->type == INTERNATIONAL)
-                unlock_takeoff_international();
-            else
-                unlock_takeoff_domestic();
-            break;
-        default:
-            break;
+    printf("[UNLOCK] %s tentando liberar recursos da fase %s\n", aircraft->id, get_phase_label_pt(aircraft->phase));
+    
+    if (pthread_mutex_trylock(&mutex) != 0) {
+        printf("[ERRO] %s não conseguiu lock para unlock! Tentando novamente...\n", aircraft->id);
+        pthread_mutex_lock(&mutex);
     }
+
+    if (aircraft->phase == LANDING) {
+        available_runways++;
+        available_gates++;
+        available_tower_ops++;
+    }
+    else if (aircraft->phase == TAKEOFF) {
+        available_runways++;
+        available_tower_ops++;
+    }
+    else if (aircraft->phase == BOARDING || aircraft->phase == DEBOARDING) {
+        available_gates++;
+
+        if (aircraft->phase == DEBOARDING) {
+            successful_flights++;
+        }
+    }
+    
+    printf("[UNLOCK] %s liberou recursos da fase %s. Disponível: pistas=%d, portões=%d, torres=%d\n", 
+           aircraft->id, get_phase_label_pt(aircraft->phase), available_runways, available_gates, available_tower_ops);
+
+    pthread_cond_broadcast(&cond);
+    pthread_mutex_unlock(&mutex);
 }

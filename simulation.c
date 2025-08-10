@@ -23,7 +23,7 @@ void allocate_resources(Airport *airport) {
         exit(1);
     }
 
-    resource_manager_init(airport->num_runways, airport->num_towers, airport->num_gates);
+    init_resources(airport->num_runways, airport->num_gates, airport->num_towers, airport->operations_by_tower);
 }
 
 void initialize_resources(Airport *airport) {
@@ -86,18 +86,16 @@ int decide_next_phase(Aircraft* aircraft) {
         case DEBOARDING:     aircraft->phase = PHASE_NONE; break;
         default:             aircraft->phase = PHASE_NONE; break;
     }
-
-    int seconds = (rand() % simulation_time_max) + 1;
-
-    printf("[EVENTO] Avião %-5s ► Entrou na fase %-12s │ Duração: %2d s\n",
-       aircraft->id,
-       get_phase_label_pt(aircraft->phase),
-       seconds);
+    int seconds = (random() % 15) + 1;
 
     return seconds;
 }
 
 void perform_phase(Aircraft *aircraft, int seconds) {
+    printf("[EVENTO] Avião %-5s ► Entrou na fase %-12s │ Duração: %2d s\n",
+       aircraft->id,
+       get_phase_label_pt(aircraft->phase),
+       seconds);
     for (int i = 0; i < seconds && simulation_running; i++) {
         sleep(1);
     }

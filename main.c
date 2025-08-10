@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <time.h>
 
 #include "include/resource_manager.h"
 #include "include/simulation.h"
@@ -10,6 +11,9 @@
 volatile bool simulation_running = true;
 volatile int simulation_time_max = 0;
 volatile int simulation_time = 1;
+
+volatile int crashed_planes = 0;
+volatile int successful_flights = 0;
 
 int get_positive_input(const char *prompt) {
     int value;
@@ -41,9 +45,13 @@ void print_simulation_summary(const Airport *airport) {
     printf("Portões: %d\n", airport->num_gates);
     printf("Torres de Controle: %d\n", airport->num_towers);
     printf("Tempo de simulação: %02d segundo(s)\n", simulation_time_max);
+    printf("Aviões que caíram: %d\n", crashed_planes);
+    printf("Voos com sucesso: %d\n", successful_flights);
 }
 
 int main() {
+    srandom(time(NULL));
+
     Airport airport;
     setup_airport(&airport);
     
@@ -65,6 +73,7 @@ int main() {
         sleep(1);
     }
     simulation_running = false;
+    wake_all_threads();
     
     printf("\n=== Simulação finalizada ===\n\n");
     
@@ -72,7 +81,7 @@ int main() {
         pthread_join(aircraft_threads[i], NULL);
         printf("✓ Thread %d finalizada\n", i);
     }
-    resource_manager_destroy();
+    destroy_resources();
     
     print_simulation_summary(&airport);
     

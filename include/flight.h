@@ -15,4 +15,6 @@ typedef enum {
     DEBOARDING
 } FlightPhase;
 
+const char* get_phase_label_pt(FlightPhase phase);
+
 #endif

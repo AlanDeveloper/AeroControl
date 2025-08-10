@@ -1,12 +1,19 @@
 #ifndef RESOURCE_MANAGER_H
 #define RESOURCE_MANAGER_H
 
-#include <pthread.h>
 #include "aircraft.h"
+#include "flight.h"
 
-void resource_manager_init(int num_runways, int num_towers, int num_gates);
-void resource_manager_destroy(void);
+void init_resources(int runways, int gates, int towers, int max_ops_per_tower);
+
+void destroy_resources(void);
+
 void lock_resources(Aircraft* aircraft);
+
 void unlock_resources(Aircraft* aircraft);
+
+void increment_crashed_planes(void);
+
+void wake_all_threads(void);
 
 #endif
