@@ -47,6 +47,16 @@ void print_simulation_summary(const Airport *airport) {
     printf("Tempo de simulação: %02d segundo(s)\n", simulation_time_max);
     printf("Aviões que caíram: %d\n", crashed_planes);
     printf("Voos com sucesso: %d\n", successful_flights);
+
+    printf("\nAviões Domésticos (%d):\n", airport->num_domestic_aircraft);
+    for (int i = 0; i < airport->num_domestic_aircraft; i++) {
+        printf("Avião ID: %s - Etapa: %s\n", airport->domestic_aircrafts[i]->id, get_phase_label_pt(airport->domestic_aircrafts[i]->phase));
+    }
+
+    printf("\nAviões Domésticos (%d):\n", airport->num_international_aircraft);
+    for (int i = 0; i < airport->num_international_aircraft; i++) {
+        printf("Avião ID: %s - Etapa: %s\n", airport->international_aircrafts[i]->id, get_phase_label_pt(airport->domestic_aircrafts[i]->phase));
+    }
 }
 
 int main() {
