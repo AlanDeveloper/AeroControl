@@ -171,7 +171,6 @@ void unlock_resources(Aircraft* aircraft) {
     printf("[UNLOCK] %s tentando liberar recursos da fase %s\n", aircraft->id, get_phase_label_pt(aircraft->phase));
     
     if (pthread_mutex_trylock(&mutex) != 0) {
-        printf("[ERRO] %s não conseguiu lock para unlock! Tentando novamente...\n", aircraft->id);
         pthread_mutex_lock(&mutex);
     }
 
