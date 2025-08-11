@@ -92,7 +92,7 @@ int decide_next_phase(Aircraft* aircraft) {
 }
 
 void perform_phase(Aircraft *aircraft, int seconds) {
-    printf("[EVENTO] Avião %-5s ► Entrou na fase %-12s │ Duração: %2d s\n",
+    printf("[EVENT] Avião %-5s ► Entrou na fase %-12s │ Duração: %2d s\n",
        aircraft->id,
        get_phase_label_pt(aircraft->phase),
        seconds);
@@ -101,7 +101,7 @@ void perform_phase(Aircraft *aircraft, int seconds) {
     }
 
     if (simulation_running) {
-        printf("[EVENTO] Avião %-5s ◄ Terminou a fase %-12s\n",
+        printf("[EVENT] Avião %-5s ◄ Terminou a fase %-12s\n",
            aircraft->id,
            get_phase_label_pt(aircraft->phase));
     }

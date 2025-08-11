@@ -79,7 +79,7 @@ int main() {
     printf("\n=== Simulação iniciada ===\n\n");
     create_and_start_aircraft_threads(&airport, aircraft_threads);
     for (int simulation_time = 1; simulation_time < simulation_time_max; simulation_time++) {
-        printf("[TEMPO] %02d segundo(s) decorridos.\n", simulation_time);
+        printf("[TIME] %02d segundo(s) decorridos.\n", simulation_time);
         sleep(1);
     }
     simulation_running = false;
